@@ -7,7 +7,7 @@ single.rd.norm.mcmc <- function(y,X,n.mcmc){
 library(statmod)	
 
 loglik <- function(d,mu,sig,theta,w) { # vectorized
-	thresh=.000000001
+	thresh=1e-20
 	d=as.vector(d)
 	mu=as.vector(mu)
 	D.1=outer(d,(theta+1)/2,"+")

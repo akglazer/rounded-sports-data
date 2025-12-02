@@ -3,7 +3,7 @@ library(nflreadr) # Get NFL data
 library(geosphere) # Get distances from lat/long
 
 # Set season value
-season_value <- 2023
+season_value <- 2024
 
 ## Note: the following is for offensive players
 # change snap counts and player stats to get defense, ST
@@ -156,6 +156,8 @@ games_long <- games_long %>%
   ungroup() %>%
   mutate(travel_distance = calculate_distance(prev_lat, prev_lon, 
                                               latitude, longitude))
+## Get play-by-play data
+nfl_pbp <- nflreadr::load_pbp(seasons = season_value)
 
 # get offensive/defensive EPA per week and season
 off_epa_week <- nfl_pbp %>%
@@ -170,7 +172,12 @@ def_epa_week <- nfl_pbp %>%
   filter(is.na(epa) == F, week <= 18, is.na(defteam) == F) %>%
   summarise(def_epa_per_play = mean(epa, na.rm = TRUE),
             def_plays = n()) %>%
-  arrange(def_epa_per_play)
+  arrange(def_epa_per_play) %>%
+  group_by(defteam) %>%
+  mutate(cum_total_def_plays = cumsum(def_plays),
+         cum_weighted_def_epa = cumsum(def_epa_per_play * def_plays),
+         cum_epa_allowed = cum_weighted_def_epa / cum_total_def_plays) %>%
+  select(week, defteam, cum_epa_allowed)
 
 rush_defense <- nfl_pbp %>%
   filter(play_type == "run", !is.na(epa)) %>%
@@ -202,6 +209,13 @@ rush_defense_filled <- all_weeks_teams %>%
   tidyr::fill(cum_rush_epa_allowed, .direction = "down") %>%
   ungroup()
 
+epa_defense_filled <- all_weeks_teams %>%
+  left_join(def_epa_week, by = c("week", "defteam")) %>%
+  arrange(defteam, week) %>%
+  group_by(defteam) %>%
+  tidyr::fill(cum_epa_allowed, .direction = "down") %>%
+  ungroup()
+
 epa_week <- off_epa_week %>%
   inner_join(def_epa_week, 
              by = c("posteam" = "defteam", "week")) %>%
@@ -218,19 +232,21 @@ odds <- games %>%
 # write.csv(epa_week, "~/Downloads/epa_week.csv")
 
 ## Join relevant offensive player stats and game data ##
-nfl_rb_df <- weekly_roster %>%
+nfl_df <- weekly_roster %>%
   dplyr::select(season, week, team, full_name, 
                 birth_date, status, position) %>%
-  mutate(full_name = clean_player_names(full_name)) %>%
-  filter(position == "RB") %>%
+  mutate(full_name = tolower(clean_player_names(full_name))) %>%
+  filter(position %in% c("RB", "TE", "WR", "QB")) %>%
   left_join(players_in_games %>%
-              mutate(player = clean_player_names(player)),
-            by = c("season", "week", "team", "full_name" = "player")) %>%
+              mutate(player = tolower(clean_player_names(player))),
+            by = c("season", "week", "team", "position",
+                   "full_name" = "player")) %>%
   left_join(player_stats %>%
   dplyr::select(player_id, player_display_name, position,
                 season, week, recent_team,
                 rushing_yards, receiving_yards, passing_yards) %>%
-    mutate(player_display_name = clean_player_names(player_display_name)), 
+    mutate(player_display_name = ifelse(player_display_name == "Christopher Brooks", "Chris Brooks", player_display_name)) %>%
+    mutate(player_display_name = tolower(clean_player_names(player_display_name))), 
                 by = c("full_name" = "player_display_name",
                                        "season", "week",
                                        "team" = "recent_team")) %>%
@@ -245,6 +261,8 @@ nfl_rb_df <- weekly_roster %>%
          age = round(time_length(interval(birth_date, gameday), "years"), 2)) %>%
   left_join(rush_defense_filled %>% mutate(next_week = week + 1), 
             by = c("week" = "next_week", "opponent.y" = "defteam")) %>%
+  left_join(epa_defense_filled %>% mutate(next_week = week + 1), 
+            by = c("week" = "next_week", "opponent.y" = "defteam")) %>%
   dplyr::select(season, week, team, full_name, player_id,
                 birth_date, age, status, 
                 game_id = game_id.x, game_type = game_type.x, 
@@ -252,15 +270,15 @@ nfl_rb_df <- weekly_roster %>%
                 opponent = opponent.x, offense_snaps, offense_pct,
                 rushing_yards, receiving_yards, passing_yards,
                 opponent_rush_epa_allowed = cum_rush_epa_allowed,
+                opponent_def_epa_allowed = cum_epa_allowed,
                 gameday, weekday, location, rest, roof, surface,
                 temp, wind, stadium, stadium_id, is_home, 
                 latitude, longitude, prev_lat, prev_lon, travel_distance) 
 
 # write csv
-#write.csv(nfl_rb_df, "~/Downloads/nfl-rb-game-yds.csv")
+write.csv(nfl_df, "~/Downloads/nfl-game-yds.csv")
 
-## Get play-by-play data
-nfl_pbp <- nflreadr::load_pbp(seasons = season_value)
+# Play-by-play data
 # Just get rushing yards
 nfl_rb_rush_df <- nfl_pbp %>%
   filter(rush_attempt == 1) %>%

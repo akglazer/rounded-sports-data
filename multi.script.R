@@ -25,15 +25,14 @@ for(i in 1:n){
 }
 
 y=rb.sm.df$rushing_yards
-X=model.matrix(~0+age+I(age^2)+game_seconds_remaining+score_differential+ydstogo+yardline_100+rest+opponent_rush_epa_allowed+is_home+travel_distance,data=rb.sm.df)
+X=model.matrix(~0+age+I(age^2)+down+I(down^2)+game_seconds_remaining+score_differential+ydstogo+yardline_100+rest+opponent_rush_epa_allowed+is_home+travel_distance,data=rb.sm.df)
 X.sc=scale(X)
 X.sc[,2]=X.sc[,1]^2
-X.sc[,9]=X[,9]
+X.sc[,4]=X.sc[,3]^2
+X.sc[,11]=X[,11]
 
 ###
 ###  Fit Rounded Norm Model
-###
-###  Note:  Model fitting may require hours depending on machine
 ###
 
 library(tictoc)
@@ -72,12 +71,12 @@ save.image(file="multi.RData")
 ###
 ### Check Convergence
 ###
-### Note: These draw slowly for large n.mcmc
+### Note:  These draw slowly for large n.mcmc
 ###
 
 load("multi.RData")
 
-#matplot(t(rd.norm.out$beta.0.save[1:4,]),type="l",lty=1) 
+#matplot(t(rd.norm.out$beta.0.save[1:4,]),type="l",lty=1)
 #matplot(t(rd.norm.out$beta.save),type="l",lty=1)
 #plot(rd.norm.out$mu.0.save,type="l")
 #plot(rd.norm.out$s2.0.save,type="l")
@@ -137,7 +136,7 @@ round(cbind(apply(rd.norm.out$beta.save,1,mean),apply(rd.norm.out$beta.save,1,sd
 round(cbind(apply(rd.ald.out$beta.save,1,mean),apply(rd.ald.out$beta.save,1,sd),t(apply(rd.ald.out$beta.save,1,quantile,c(0.025,.975)))),2)
 
 library(vioplot)
-vioplot(data.frame(t(rd.ald.out$beta.save)),names=c("age","age^2","game seconds remaining","score differential","yards to go","line of scrimmage","days of rest","opp. EPA","homefield status","travel distance"),las=2,mar=c(10,4,4,2))
+vioplot(data.frame(t(rd.ald.out$beta.save)),names=c("age","age^2","down","down^2","game seconds remaining","score differential","yards to go","line of scrimmage","days of rest","opp. EPA","homefield status","travel distance"),las=2,mar=c(10,4,4,2))
 abline(h=0,col=2,lty=2)
 
 ###
@@ -145,4 +144,5 @@ abline(h=0,col=2,lty=2)
 ###
 
 quantile(rd.ald.out$tau.save,c(.025,.975))
+
 
